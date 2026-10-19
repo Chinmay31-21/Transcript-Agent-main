@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>LearnLens AI Companion</title>
+  <style>
+    body {
+      width: 320px;
+      padding: 16px;
+      margin: 0;
+      background: #090d16;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      box-sizing: border-box;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      border-bottom: 1px solid #1e293b;
+      padding-bottom: 10px;
+    }
+    .logo {
+      font-size: 15px;
+      font-weight: 700;
+      color: #22c55e;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .credit-badge {
+      background: linear-gradient(135deg, #1e3a8a, #3b82f6);
+      color: #ffffff;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      font-size: 10px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      border: 1px solid #60a5fa;
+    }
+    .profile-card {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 10px;
+      padding: 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .profile-avatar {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid #22c55e;
+    }
+    .profile-info {
+      flex: 1;
+      overflow: hidden;
+    }
+    .profile-name {
+      font-size: 12px;
+      font-weight: 600;
+      color: #f1f5f9;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .profile-meta {
+      font-size: 10px;
+      color: #94a3b8;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .btn {
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+      padding: 9px;
+      background: #22c55e;
+      color: white;
+      text-align: center;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 12px;
+      cursor: pointer;
+      border: none;
+      margin-bottom: 8px;
+      transition: background 0.15s;
+    }
+    .btn:hover {
+      background: #16a34a;
+    }
+    .btn-secondary {
+      background: #1f2937;
+      color: #cbd5e1;
+      border: 1px solid #374151;
+    }
+    .btn-secondary:hover {
+      background: #374151;
+    }
+    .btn-upgrade {
+      background: linear-gradient(135deg, #7c3aed, #4f46e5);
+      border: 1px solid #8b5cf6;
+      color: white;
+      font-weight: 700;
+      margin-top: 6px;
+    }
+    .btn-upgrade:hover {
+      filter: brightness(1.1);
+    }
+    .status-row {
+      font-size: 11px;
+      color: #64748b;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 6px;
+    }
+    /* Auth Form styles */
+    #auth-view {
+      display: none;
+    }
+    .form-group {
+      margin-bottom: 8px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 10px;
+      color: #94a3b8;
+      margin-bottom: 3px;
+    }
+    .form-group input, .form-group select {
+      width: 100%;
+      box-sizing: border-box;
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 6px;
+      padding: 6px 8px;
+      color: white;
+      font-size: 11px;
+    }
+    .toggle-auth {
+      font-size: 10px;
+      color: #38bdf8;
+      text-align: center;
+      cursor: pointer;
+      margin-top: 6px;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">
+      <span>🎓 LearnLens AI</span>
+    </div>
+    <div class="credit-badge" id="credit-badge">
+      <span>⭐</span> <span id="credit-count">10/10 Passes</span>
+    </div>
+  </div>
+
+  <!-- Authenticated View -->
+  <div id="authenticated-view">
+    <div class="profile-card">
+      <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80" class="profile-avatar" id="user-avatar" alt="Avatar" />
+      <div class="profile-info">
+        <div class="profile-name" id="user-name">Alex Kumar</div>
+        <div class="profile-meta" id="user-degree">B.Tech CSE • 3rd Year</div>
+        <div class="profile-meta" id="user-inst">IIT Bombay</div>
+      </div>
+    </div>
+
+    <button class="btn" id="open-studio">🚀 Open Full Study Studio</button>
+    <button class="btn btn-secondary" id="open-sidepanel">💬 Open AI Companion Sidepanel</button>
+    <button class="btn btn-upgrade" id="upgrade-plan">⚡ Unlock Infinite Pass (₹299/mo)</button>
+  </div>
+
+  <!-- Auth View (Sign in / Register) -->
+  <div id="auth-view">
+    <div style="font-size: 12px; font-weight: 600; color: #f8fafc; margin-bottom: 8px;">
+      Register for 10 Free Passes
+    </div>
+    <div class="form-group">
+      <label>Full Name</label>
+      <input type="text" id="reg-name" placeholder="e.g. Rahul Sharma" />
+    </div>
+    <div class="form-group">
+      <label>Email Address</label>
+      <input type="email" id="reg-email" placeholder="name@college.edu" />
+    </div>
+    <div class="form-group">
+      <label>Degree / Class</label>
+      <input type="text" id="reg-degree" placeholder="e.g. B.Tech CSE / Class 12 PCM" />
+    </div>
+    <button class="btn" id="submit-auth">Get 10 Free Passes</button>
+    <span class="toggle-auth" id="toggle-auth-btn">Already registered? Quick Login</span>
+  </div>
+
+  <div class="status-row">
+    <span id="server-status">Checking server...</span>
+    <span style="font-size: 10px; color: #38bdf8; cursor: pointer;" id="switch-account">Switch User</span>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

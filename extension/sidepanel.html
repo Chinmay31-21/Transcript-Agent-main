@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>LearnLens AI Companion</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #090d16;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      font-size: 13px;
+    }
+    header {
+      padding: 10px 14px;
+      background: #111827;
+      border-bottom: 1px solid #1f2937;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .logo {
+      font-weight: 700;
+      color: #22c55e;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+    }
+    .user-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #1f2937;
+      padding: 4px 8px;
+      border-radius: 9999px;
+      font-size: 11px;
+      color: #94a3b8;
+      border: 1px solid #374151;
+    }
+    .credit-badge {
+      background: linear-gradient(135deg, #1e3a8a, #2563eb);
+      color: white;
+      padding: 2px 6px;
+      border-radius: 9999px;
+      font-weight: 700;
+      font-size: 10px;
+    }
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #22c55e;
+    }
+    #chat-box {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .msg {
+      padding: 10px 14px;
+      border-radius: 12px;
+      max-width: 90%;
+      line-height: 1.45;
+      font-size: 12.5px;
+    }
+    .msg.user {
+      background: #16a34a;
+      color: white;
+      align-self: flex-end;
+      border-bottom-right-radius: 2px;
+    }
+    .msg.assistant {
+      background: #111827;
+      border: 1px solid #1f2937;
+      color: #f1f5f9;
+      align-self: flex-start;
+      border-bottom-left-radius: 2px;
+    }
+    .quick-chips {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding: 8px 14px;
+      background: #0f172a;
+      border-top: 1px solid #1e293b;
+    }
+    .chip {
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 10.5px;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .chip:hover {
+      background: #334155;
+      color: white;
+    }
+    footer {
+      padding: 10px 12px;
+      background: #111827;
+      border-top: 1px solid #1f2937;
+      display: flex;
+      gap: 8px;
+    }
+    input {
+      flex: 1;
+      background: #090d16;
+      border: 1px solid #374151;
+      border-radius: 8px;
+      padding: 8px 12px;
+      color: white;
+      font-size: 12px;
+      outline: none;
+    }
+    input:focus {
+      border-color: #22c55e;
+    }
+    button {
+      background: #22c55e;
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    button:hover {
+      background: #16a34a;
+    }
+    .app-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 12px;
+      background: linear-gradient(90deg, #1d4ed8, #0ea5e9);
+      color: white;
+      text-decoration: none;
+      font-size: 11px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <a href="http://localhost:5173" target="_blank" class="app-link">
+    <span>🚀 Open Full Distraction-Free Study Studio</span>
+    <span>Launch ↗</span>
+  </a>
+
+  <header>
+    <div class="logo">
+      <span>🎓 LearnLens</span>
+    </div>
+    <div class="user-pill" id="user-profile-badge">
+      <span class="credit-badge" id="side-credits">10 Passes</span>
+      <span id="side-user-name">Alex K.</span>
+      <span class="status-dot" id="server-status"></span>
+    </div>
+  </header>
+
+  <div id="chat-box">
+    <div class="msg assistant">
+      👋 Hello <strong>Alex</strong>! I am observing your study materials. Ask me to explain any slide diagram, solve a formula step-by-step, or generate active recall flashcards!
+    </div>
+  </div>
+
+  <div class="quick-chips">
+    <div class="chip" data-cmd="Explain this current slide simply">💡 Explain Slide</div>
+    <div class="chip" data-cmd="Generate 3 active recall questions from what was just taught">🎯 Practice Quiz</div>
+    <div class="chip" data-cmd="Summarize the core formulas/code taught in this video">📝 Formula Sheet</div>
+    <div class="chip" data-cmd="What are the common interview/exam traps on this topic?">⚠️ Exam Traps</div>
+  </div>
+
+  <footer>
+    <input type="text" id="query-input" placeholder="Ask your AI Teacher about this lecture..." />
+    <button id="send-btn">Ask</button>
+  </footer>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

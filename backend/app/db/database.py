@@ -1,0 +1,1128 @@
+import sqlite3
+import json
+import os
+import uuid
+import time
+from pathlib import Path
+from typing import List, Optional, Dict, Any
+from backend.app.core.config import settings, SESSIONS_DIR, DATA_DIR, BASE_DIR
+from backend.app.models.schemas import (
+    LearningSession, TranscriptSegment, FrameCapture, Concept,
+    ChatMessage, QuizQuestion, LearnerProfile, TaskState, VisualCategory, TeacherMode,
+    UserProfile
+)
+
+def get_db_connection() -> sqlite3.Connection:
+    conn = sqlite3.connect(str(settings.DB_PATH), timeout=10.0)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=5000;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+    except Exception:
+        pass
+    return conn
+
+def init_db():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Sessions table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        source_platform TEXT DEFAULT 'Chrome Tab',
+        source_url_or_title TEXT,
+        created_at REAL,
+        updated_at REAL,
+        duration_sec REAL DEFAULT 0.0,
+        progress_pct INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'IDLE',
+        is_pinned INTEGER DEFAULT 0,
+        tags TEXT DEFAULT '[]',
+        topic_count INTEGER DEFAULT 0,
+        concept_count INTEGER DEFAULT 0,
+        screenshot_count INTEGER DEFAULT 0,
+        question_count INTEGER DEFAULT 0
+    )
+    """)
+    
+    # Transcript segments table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS transcript_segments (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        timestamp_start REAL,
+        timestamp_end REAL,
+        timestamp_formatted TEXT,
+        speaker TEXT,
+        text TEXT NOT NULL,
+        confidence REAL DEFAULT 0.95,
+        topic TEXT,
+        associated_frame_id TEXT,
+        FOREIGN KEY (session_id) REFERENCES sessions (id) ON DELETE CASCADE
+    )
+    """)
+    
+    # Frames table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS frames (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        timestamp_sec REAL,
+        timestamp_formatted TEXT,
+        image_path TEXT NOT NULL,
+        thumbnail_path TEXT,
+        p_hash TEXT,
+        ocr_text TEXT DEFAULT '',
+        visual_description TEXT DEFAULT '',
+        category TEXT DEFAULT 'SLIDE',
+        importance_score REAL DEFAULT 0.5,
+        concepts TEXT DEFAULT '[]',
+        is_pinned INTEGER DEFAULT 0,
+        FOREIGN KEY (session_id) REFERENCES sessions (id) ON DELETE CASCADE
+    )
+    """)
+    
+    # Concepts table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS concepts (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        definition TEXT NOT NULL,
+        simple_explanation TEXT,
+        deep_explanation TEXT,
+        evidence_timestamp TEXT,
+        evidence_frame_id TEXT,
+        related_concepts TEXT DEFAULT '[]',
+        exam_importance TEXT DEFAULT 'High',
+        difficulty TEXT DEFAULT 'Medium',
+        confidence REAL DEFAULT 0.9,
+        is_pinned INTEGER DEFAULT 0,
+        FOREIGN KEY (session_id) REFERENCES sessions (id) ON DELETE CASCADE
+    )
+    """)
+    
+    # Chat Messages table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS chat_messages (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        sender TEXT NOT NULL,
+        text TEXT NOT NULL,
+        mode TEXT DEFAULT 'simple',
+        timestamp REAL,
+        evidence TEXT DEFAULT '[]',
+        is_pinned INTEGER DEFAULT 0,
+        FOREIGN KEY (session_id) REFERENCES sessions (id) ON DELETE CASCADE
+    )
+    """)
+    
+    # Quiz Questions table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS quiz_questions (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        question TEXT NOT NULL,
+        options TEXT NOT NULL,
+        correct_option_index INTEGER,
+        concept_tested TEXT,
+        relevant_timestamp TEXT,
+        explanation TEXT,
+        user_answer_index INTEGER,
+        is_bookmarked INTEGER DEFAULT 0,
+        FOREIGN KEY (session_id) REFERENCES sessions (id) ON DELETE CASCADE
+    )
+    """)
+    
+    # Learner Profiles table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS learner_profiles (
+        session_id TEXT PRIMARY KEY,
+        concepts_viewed TEXT DEFAULT '[]',
+        concepts_grasped TEXT DEFAULT '[]',
+        concepts_struggling TEXT DEFAULT '[]',
+        questions_asked_count INTEGER DEFAULT 0,
+        pinned_count INTEGER DEFAULT 0,
+        practice_accuracy REAL DEFAULT 0.0,
+        weak_areas TEXT DEFAULT '[]',
+        notes_summary TEXT DEFAULT '',
+        FOREIGN KEY (session_id) REFERENCES sessions (id) ON DELETE CASCADE
+    )
+    """)
+
+    # Users table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT,
+        name TEXT NOT NULL,
+        phone TEXT DEFAULT '',
+        avatar_url TEXT DEFAULT '',
+        education_level TEXT DEFAULT 'Undergraduate',
+        standard_class TEXT DEFAULT '3rd Year',
+        institution TEXT DEFAULT 'Indian Institute of Technology',
+        degree_major TEXT DEFAULT 'Computer Science & Engineering',
+        focus_topics TEXT DEFAULT '["Data Structures & Algorithms", "System Design", "Operating Systems"]',
+        credits_balance INTEGER DEFAULT 10,
+        total_credits_used INTEGER DEFAULT 0,
+        subscription_tier TEXT DEFAULT 'FREE_TRIAL',
+        created_at REAL,
+        updated_at REAL
+    )
+    """)
+
+    # Credit Ledger table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS credit_transactions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        session_id TEXT,
+        action TEXT NOT NULL,
+        credits_change INTEGER NOT NULL,
+        balance_after INTEGER NOT NULL,
+        timestamp REAL,
+        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+    )
+    """)
+
+    # Seed Default Verified Student Profile if not present
+    try:
+        cursor.execute("SELECT id FROM users WHERE email = 'demo_student@learnlens.ai'")
+        if not cursor.fetchone():
+            now_ts = time.time()
+            cursor.execute("""
+            INSERT INTO users (id, email, password_hash, name, phone, avatar_url, education_level, standard_class, institution, degree_major, focus_topics, credits_balance, total_credits_used, subscription_tier, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                "usr_demo_student_01",
+                "demo_student@learnlens.ai",
+                "demo123_hash",
+                "Alex Kumar",
+                "+91 98765 43210",
+                "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+                "Undergraduate",
+                "3rd Year",
+                "Indian Institute of Technology",
+                "Computer Science & Engineering",
+                json.dumps(["Data Structures & Algorithms", "System Design", "Operating Systems", "Computer Networks"]),
+                10,
+                0,
+                "FREE_TRIAL",
+                now_ts,
+                now_ts
+            ))
+            cursor.execute("""
+            INSERT INTO credit_transactions (id, user_id, session_id, action, credits_change, balance_after, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                "tx_init_bonus_01",
+                "usr_demo_student_01",
+                None,
+                "WELCOME_BONUS_10_PASSES",
+                10,
+                10,
+                now_ts
+            ))
+    except Exception:
+        pass
+
+    # Performance Indexes for sub-millisecond lookups
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_transcript_session ON transcript_segments (session_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_transcript_time ON transcript_segments (session_id, timestamp_start);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_frames_session ON frames (session_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_frames_time ON frames (session_id, timestamp_sec);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_concepts_session ON concepts (session_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_chat_session ON chat_messages (session_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_quiz_session ON quiz_questions (session_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);")
+
+    # Path Portability Migration:
+    try:
+        cursor.execute("SELECT id, session_id, image_path, thumbnail_path FROM frames WHERE image_path LIKE 'C:%' OR image_path LIKE 'c:%' OR image_path LIKE '%\\%'")
+        rows = cursor.fetchall()
+        for r in rows:
+            fid = r["id"]
+            sid = r["session_id"]
+            raw_img = r["image_path"] or ""
+            raw_thumb = r["thumbnail_path"] or ""
+            img_name = Path(raw_img.replace("\\", "/")).name if raw_img else ""
+            thumb_name = Path(raw_thumb.replace("\\", "/")).name if raw_thumb else ""
+            new_img = f"sessions/{sid}/screenshots/{img_name}" if img_name else ""
+            new_thumb = f"sessions/{sid}/screenshots/{thumb_name}" if thumb_name else ""
+            cursor.execute("UPDATE frames SET image_path = ?, thumbnail_path = ? WHERE id = ?", (new_img, new_thumb, fid))
+        if rows:
+            conn.commit()
+    except Exception:
+        pass
+    
+    conn.commit()
+    conn.close()
+
+# Session directory management
+def get_session_dir(session_id: str) -> Path:
+    s_dir = SESSIONS_DIR / session_id
+    (s_dir / "screenshots").mkdir(parents=True, exist_ok=True)
+    (s_dir / "exports").mkdir(parents=True, exist_ok=True)
+    return s_dir
+
+def resolve_frame_path(image_path: Optional[str], session_id: Optional[str] = None) -> Optional[Path]:
+    """
+    Robustly resolves a frame image or thumbnail path across environments
+    (Windows, Linux, Docker, Render) regardless of whether an absolute Windows path
+    or relative path was stored in SQLite.
+    """
+    if not image_path:
+        return None
+
+    raw_path = str(image_path).strip()
+    if not raw_path:
+        return None
+
+    p = Path(raw_path)
+    # 1. Exact path as stored if on current machine
+    if p.is_file():
+        return p
+
+    # 2. Extract filename
+    fname = p.name
+
+    # 3. Detect session_id if not explicitly provided
+    if not session_id:
+        normalized_str = raw_path.replace("\\", "/")
+        if "sessions/" in normalized_str:
+            after_sessions = normalized_str.split("sessions/")[1]
+            parts = after_sessions.split("/")
+            if len(parts) > 1:
+                session_id = parts[0]
+
+    # 4. Search in SESSIONS_DIR
+    if session_id:
+        c1 = SESSIONS_DIR / session_id / "screenshots" / fname
+        if c1.is_file():
+            return c1
+        c2 = SESSIONS_DIR / session_id / fname
+        if c2.is_file():
+            return c2
+
+    # 5. Search in DATA_DIR / BASE_DIR
+    if session_id:
+        c3 = DATA_DIR / "sessions" / session_id / "screenshots" / fname
+        if c3.is_file():
+            return c3
+        c4 = BASE_DIR / "data" / "sessions" / session_id / "screenshots" / fname
+        if c4.is_file():
+            return c4
+
+    # 6. Global search in any session's screenshots directory for this filename
+    for s_dir in SESSIONS_DIR.glob("*"):
+        candidate = s_dir / "screenshots" / fname
+        if candidate.is_file():
+            return candidate
+
+    return None
+
+def _deduplicate_overlap(last_tail: str, new_text: str) -> str:
+    """Strip overlapping words at chunk boundary from sliding-window audio capture."""
+    if not last_tail or not new_text:
+        return new_text.strip()
+    last_words = [w.lower().strip(".,?!;:") for w in last_tail.split()]
+    new_words = new_text.strip().split()
+    clean_new = [w.lower().strip(".,?!;:") for w in new_words]
+
+    max_k = min(len(last_words), len(clean_new), 6)
+    for k in range(max_k, 0, -1):
+        if last_words[-k:] == clean_new[:k]:
+            remaining = new_words[k:]
+            return " ".join(remaining).strip()
+    return new_text.strip()
+
+
+class DatabaseManager:
+    @staticmethod
+    def create_session(session: LearningSession) -> LearningSession:
+        get_session_dir(session.id)
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+        INSERT INTO sessions (id, title, source_platform, source_url_or_title, created_at, updated_at, duration_sec, progress_pct, status, is_pinned, tags, topic_count, concept_count, screenshot_count, question_count)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            session.id, session.title, session.source_platform, session.source_url_or_title,
+            session.created_at, session.updated_at, session.duration_sec, session.progress_pct,
+            session.status.value, 1 if session.is_pinned else 0, json.dumps(session.tags),
+            session.topic_count, session.concept_count, session.screenshot_count, session.question_count
+        ))
+        # initialize learner profile
+        cursor.execute("""
+        INSERT INTO learner_profiles (session_id) VALUES (?)
+        """, (session.id,))
+        
+        conn.commit()
+        conn.close()
+        return session
+
+    @staticmethod
+    def get_session(session_id: str) -> Optional[LearningSession]:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM sessions WHERE id = ?", (session_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return None
+        return LearningSession(
+            id=row["id"],
+            title=row["title"],
+            source_platform=row["source_platform"],
+            source_url_or_title=row["source_url_or_title"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            duration_sec=row["duration_sec"],
+            progress_pct=row["progress_pct"],
+            status=TaskState(row["status"]),
+            is_pinned=bool(row["is_pinned"]),
+            tags=json.loads(row["tags"] or "[]"),
+            topic_count=row["topic_count"],
+            concept_count=row["concept_count"],
+            screenshot_count=row["screenshot_count"],
+            question_count=row["question_count"]
+        )
+
+    @staticmethod
+    def list_sessions(limit: int = 50) -> List[LearningSession]:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?", (limit,))
+        rows = cursor.fetchall()
+        conn.close()
+        results = []
+        for row in rows:
+            results.append(LearningSession(
+                id=row["id"],
+                title=row["title"],
+                source_platform=row["source_platform"],
+                source_url_or_title=row["source_url_or_title"],
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+                duration_sec=row["duration_sec"],
+                progress_pct=row["progress_pct"],
+                status=TaskState(row["status"]),
+                is_pinned=bool(row["is_pinned"]),
+                tags=json.loads(row["tags"] or "[]"),
+                topic_count=row["topic_count"],
+                concept_count=row["concept_count"],
+                screenshot_count=row["screenshot_count"],
+                question_count=row["question_count"]
+            ))
+        return results
+
+    @staticmethod
+    def update_session(session_id: str, updates: Dict[str, Any]):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        set_clauses = []
+        values = []
+        for k, v in updates.items():
+            set_clauses.append(f"{k} = ?")
+            if isinstance(v, (dict, list)):
+                values.append(json.dumps(v))
+            elif isinstance(v, bool):
+                values.append(1 if v else 0)
+            elif isinstance(v, TaskState):
+                values.append(v.value)
+            else:
+                values.append(v)
+        values.append(session_id)
+        query = f"UPDATE sessions SET {', '.join(set_clauses)} WHERE id = ?"
+        cursor.execute(query, tuple(values))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def delete_session(session_id: str):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+        cursor.execute("DELETE FROM transcript_segments WHERE session_id = ?", (session_id,))
+        cursor.execute("DELETE FROM frames WHERE session_id = ?", (session_id,))
+        cursor.execute("DELETE FROM concepts WHERE session_id = ?", (session_id,))
+        cursor.execute("DELETE FROM chat_messages WHERE session_id = ?", (session_id,))
+        cursor.execute("DELETE FROM quiz_questions WHERE session_id = ?", (session_id,))
+        cursor.execute("DELETE FROM learner_profiles WHERE session_id = ?", (session_id,))
+        conn.commit()
+        conn.close()
+        
+        # remove disk files
+        s_dir = SESSIONS_DIR / session_id
+        if s_dir.exists():
+            import shutil
+            shutil.rmtree(s_dir, ignore_errors=True)
+
+    @staticmethod
+    def add_transcript_segment(segment: TranscriptSegment):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+        INSERT INTO transcript_segments (id, session_id, timestamp_start, timestamp_end, timestamp_formatted, speaker, text, confidence, topic, associated_frame_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            segment.id, segment.session_id, segment.timestamp_start, segment.timestamp_end,
+            segment.timestamp_formatted, segment.speaker, segment.text, segment.confidence,
+            segment.topic, segment.associated_frame_id
+        ))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def group_segments_by_minute(segments: List[TranscriptSegment]) -> List[TranscriptSegment]:
+        """Consolidates any scattered micro-segments into clean 1-minute blocks."""
+        if not segments:
+            return []
+        grouped: Dict[int, TranscriptSegment] = {}
+        order: List[int] = []
+        for s in segments:
+            min_idx = int((s.timestamp_start or 0.0) // 60)
+            if min_idx not in grouped:
+                min_start_sec = min_idx * 60.0
+                formatted_ts = f"{int(min_start_sec // 60):02d}:00"
+                grouped[min_idx] = TranscriptSegment(
+                    id=f"{s.session_id}_min_{min_idx}",
+                    session_id=s.session_id,
+                    timestamp_start=min_start_sec,
+                    timestamp_end=s.timestamp_end,
+                    timestamp_formatted=formatted_ts,
+                    speaker=s.speaker or "Instructor",
+                    text=s.text.strip(),
+                    confidence=s.confidence or 0.95,
+                    topic=s.topic,
+                    associated_frame_id=s.associated_frame_id
+                )
+                order.append(min_idx)
+            else:
+                existing = grouped[min_idx]
+                clean = s.text.strip()
+                if clean:
+                    deduped = _deduplicate_overlap(existing.text, clean)
+                    if deduped:
+                        existing.text = f"{existing.text} {deduped}".strip()
+                if s.timestamp_end and s.timestamp_end > (existing.timestamp_end or 0):
+                    existing.timestamp_end = s.timestamp_end
+        return [grouped[k] for k in order]
+
+    @staticmethod
+    def upsert_minute_transcript_segment(
+        session_id: str,
+        minute_start_sec: float,
+        timestamp_end: float,
+        timestamp_formatted: str,
+        speaker: str,
+        new_text: str,
+        confidence: float = 0.95,
+        topic: Optional[str] = None,
+        associated_frame_id: Optional[str] = None
+    ) -> TranscriptSegment:
+        clean_new = new_text.strip()
+        min_idx = int(minute_start_sec // 60)
+        seg_id = f"{session_id}_min_{min_idx}"
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM transcript_segments WHERE id = ? OR (session_id = ? AND timestamp_formatted = ?)",
+            (seg_id, session_id, timestamp_formatted)
+        )
+        row = cursor.fetchone()
+
+        if row:
+            target_id = row["id"]
+            existing_text = row["text"] or ""
+            if clean_new:
+                deduped = _deduplicate_overlap(existing_text, clean_new)
+                if deduped:
+                    updated_text = f"{existing_text} {deduped}".strip()
+                else:
+                    updated_text = existing_text
+            else:
+                updated_text = existing_text
+
+            new_end = max(row["timestamp_end"] or 0.0, timestamp_end)
+            final_speaker = row["speaker"] if (row["speaker"] and row["speaker"] != "Speaker") else (speaker or "Instructor")
+
+            cursor.execute("""
+                UPDATE transcript_segments 
+                SET text = ?, timestamp_end = ?, speaker = ?
+                WHERE id = ?
+            """, (updated_text, new_end, final_speaker, target_id))
+            conn.commit()
+            conn.close()
+
+            return TranscriptSegment(
+                id=target_id,
+                session_id=session_id,
+                timestamp_start=row["timestamp_start"],
+                timestamp_end=new_end,
+                timestamp_formatted=row["timestamp_formatted"],
+                speaker=final_speaker,
+                text=updated_text,
+                confidence=confidence,
+                topic=row["topic"],
+                associated_frame_id=row["associated_frame_id"]
+            )
+        else:
+            cursor.execute("""
+            INSERT INTO transcript_segments (id, session_id, timestamp_start, timestamp_end, timestamp_formatted, speaker, text, confidence, topic, associated_frame_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                seg_id, session_id, minute_start_sec, timestamp_end,
+                timestamp_formatted, speaker or "Instructor", clean_new,
+                confidence, topic, associated_frame_id
+            ))
+            cursor.execute("UPDATE sessions SET updated_at = ? WHERE id = ?", (timestamp_end, session_id))
+            conn.commit()
+            conn.close()
+
+            return TranscriptSegment(
+                id=seg_id,
+                session_id=session_id,
+                timestamp_start=minute_start_sec,
+                timestamp_end=timestamp_end,
+                timestamp_formatted=timestamp_formatted,
+                speaker=speaker or "Instructor",
+                text=clean_new,
+                confidence=confidence,
+                topic=topic,
+                associated_frame_id=associated_frame_id
+            )
+
+    @staticmethod
+    def get_transcript_segments(session_id: str) -> List[TranscriptSegment]:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM transcript_segments WHERE session_id = ? ORDER BY timestamp_start ASC", (session_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        raw_segments = [
+            TranscriptSegment(
+                id=r["id"], session_id=r["session_id"], timestamp_start=r["timestamp_start"],
+                timestamp_end=r["timestamp_end"], timestamp_formatted=r["timestamp_formatted"],
+                speaker=r["speaker"], text=r["text"], confidence=r["confidence"],
+                topic=r["topic"], associated_frame_id=r["associated_frame_id"]
+            ) for r in rows
+        ]
+        return DatabaseManager.group_segments_by_minute(raw_segments)
+
+    @staticmethod
+    def add_frame(frame: FrameCapture):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Ensure portable storage path: sessions/<session_id>/screenshots/<filename>
+        img_name = Path(str(frame.image_path).replace("\\", "/")).name if frame.image_path else ""
+        thumb_name = Path(str(frame.thumbnail_path).replace("\\", "/")).name if frame.thumbnail_path else ""
+        portable_img = f"sessions/{frame.session_id}/screenshots/{img_name}" if img_name else (frame.image_path or "")
+        portable_thumb = f"sessions/{frame.session_id}/screenshots/{thumb_name}" if thumb_name else (frame.thumbnail_path or "")
+
+        cursor.execute("""
+        INSERT INTO frames (id, session_id, timestamp_sec, timestamp_formatted, image_path, thumbnail_path, p_hash, ocr_text, visual_description, category, importance_score, concepts, is_pinned)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            frame.id, frame.session_id, frame.timestamp_sec, frame.timestamp_formatted,
+            portable_img, portable_thumb, frame.p_hash, frame.ocr_text,
+            frame.visual_description, frame.category.value, frame.importance_score,
+            json.dumps(frame.concepts), 1 if frame.is_pinned else 0
+        ))
+        # update screenshot count
+        cursor.execute("UPDATE sessions SET screenshot_count = screenshot_count + 1 WHERE id = ?", (frame.session_id,))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def get_frames(session_id: str) -> List[FrameCapture]:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM frames WHERE session_id = ? ORDER BY timestamp_sec ASC", (session_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [
+            FrameCapture(
+                id=r["id"], session_id=r["session_id"], timestamp_sec=r["timestamp_sec"],
+                timestamp_formatted=r["timestamp_formatted"], image_path=r["image_path"],
+                thumbnail_path=r["thumbnail_path"], p_hash=r["p_hash"], ocr_text=r["ocr_text"],
+                visual_description=r["visual_description"], category=VisualCategory(r["category"]),
+                importance_score=r["importance_score"], concepts=json.loads(r["concepts"] or "[]"),
+                is_pinned=bool(r["is_pinned"])
+            ) for r in rows
+        ]
+
+    @staticmethod
+    def get_latest_frame(session_id: str) -> Optional[FrameCapture]:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM frames WHERE session_id = ? ORDER BY rowid DESC LIMIT 1", (session_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return None
+        return FrameCapture(
+            id=row["id"], session_id=row["session_id"], timestamp_sec=row["timestamp_sec"],
+            timestamp_formatted=row["timestamp_formatted"], image_path=row["image_path"],
+            thumbnail_path=row["thumbnail_path"], p_hash=row["p_hash"], ocr_text=row["ocr_text"],
+            visual_description=row["visual_description"], category=VisualCategory(row["category"]),
+            importance_score=row["importance_score"], concepts=json.loads(row["concepts"] or "[]"),
+            is_pinned=bool(row["is_pinned"])
+        )
+
+    @staticmethod
+    def update_frame_metadata(frame_id: str, updates: Dict[str, Any]):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        set_clauses = []
+        values = []
+        for k, v in updates.items():
+            set_clauses.append(f"{k} = ?")
+            if isinstance(v, (dict, list)):
+                values.append(json.dumps(v))
+            elif isinstance(v, bool):
+                values.append(1 if v else 0)
+            elif hasattr(v, "value"):
+                values.append(v.value)
+            else:
+                values.append(v)
+        values.append(frame_id)
+        query = f"UPDATE frames SET {', '.join(set_clauses)} WHERE id = ?"
+        cursor.execute(query, tuple(values))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def add_concept(concept: Concept):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+        INSERT INTO concepts (id, session_id, name, definition, simple_explanation, deep_explanation, evidence_timestamp, evidence_frame_id, related_concepts, exam_importance, difficulty, confidence, is_pinned)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            concept.id, concept.session_id, concept.name, concept.definition,
+            concept.simple_explanation, concept.deep_explanation, concept.evidence_timestamp,
+            concept.evidence_frame_id, json.dumps(concept.related_concepts),
+            concept.exam_importance, concept.difficulty, concept.confidence,
+            1 if concept.is_pinned else 0
+        ))
+        cursor.execute("UPDATE sessions SET concept_count = concept_count + 1 WHERE id = ?", (concept.session_id,))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def get_concepts(session_id: str) -> List[Concept]:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM concepts WHERE session_id = ? ORDER BY is_pinned DESC, name ASC", (session_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [
+            Concept(
+                id=r["id"], session_id=r["session_id"], name=r["name"], definition=r["definition"],
+                simple_explanation=r["simple_explanation"], deep_explanation=r["deep_explanation"],
+                evidence_timestamp=r["evidence_timestamp"], evidence_frame_id=r["evidence_frame_id"],
+                related_concepts=json.loads(r["related_concepts"] or "[]"),
+                exam_importance=r["exam_importance"], difficulty=r["difficulty"],
+                confidence=r["confidence"], is_pinned=bool(r["is_pinned"])
+            ) for r in rows
+        ]
+
+    @staticmethod
+    def add_chat_message(msg: ChatMessage):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+        INSERT INTO chat_messages (id, session_id, sender, text, mode, timestamp, evidence, is_pinned)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            msg.id, msg.session_id, msg.sender, msg.text,
+            msg.mode.value if msg.mode else "simple", msg.timestamp,
+            json.dumps([e.dict() for e in msg.evidence]), 1 if msg.is_pinned else 0
+        ))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def get_chat_messages(session_id: str) -> List[ChatMessage]:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM chat_messages WHERE session_id = ? ORDER BY timestamp ASC", (session_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        messages = []
+        for r in rows:
+            evidence_data = json.loads(r["evidence"] or "[]")
+            messages.append(ChatMessage(
+                id=r["id"], session_id=r["session_id"], sender=r["sender"],
+                text=r["text"], mode=TeacherMode(r["mode"]) if r["mode"] else TeacherMode.SIMPLE,
+                timestamp=r["timestamp"], evidence=evidence_data, is_pinned=bool(r["is_pinned"])
+            ))
+        return messages
+
+    @staticmethod
+    def add_quiz_question(q: QuizQuestion):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+        INSERT INTO quiz_questions (id, session_id, question, options, correct_option_index, concept_tested, relevant_timestamp, explanation, user_answer_index, is_bookmarked)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            q.id, q.session_id, q.question, json.dumps(q.options), q.correct_option_index,
+            q.concept_tested, q.relevant_timestamp, q.explanation, q.user_answer_index,
+            1 if q.is_bookmarked else 0
+        ))
+        cursor.execute("UPDATE sessions SET question_count = question_count + 1 WHERE id = ?", (q.session_id,))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def get_quiz_questions(session_id: str) -> List[QuizQuestion]:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM quiz_questions WHERE session_id = ?", (session_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [
+            QuizQuestion(
+                id=r["id"], session_id=r["session_id"], question=r["question"],
+                options=json.loads(r["options"] or "[]"), correct_option_index=r["correct_option_index"],
+                concept_tested=r["concept_tested"], relevant_timestamp=r["relevant_timestamp"],
+                explanation=r["explanation"], user_answer_index=r["user_answer_index"],
+                is_bookmarked=bool(r["is_bookmarked"])
+            ) for r in rows
+        ]
+
+    @staticmethod
+    def clear_quiz_questions(session_id: str):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM quiz_questions WHERE session_id = ?", (session_id,))
+        cursor.execute("UPDATE sessions SET question_count = 0 WHERE id = ?", (session_id,))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def get_learner_profile(session_id: str) -> LearnerProfile:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM learner_profiles WHERE session_id = ?", (session_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return LearnerProfile(session_id=session_id)
+        return LearnerProfile(
+            session_id=row["session_id"],
+            concepts_viewed=json.loads(row["concepts_viewed"] or "[]"),
+            concepts_grasped=json.loads(row["concepts_grasped"] or "[]"),
+            concepts_struggling=json.loads(row["concepts_struggling"] or "[]"),
+            questions_asked_count=row["questions_asked_count"],
+            pinned_count=row["pinned_count"],
+            practice_accuracy=row["practice_accuracy"],
+            weak_areas=json.loads(row["weak_areas"] or "[]"),
+            notes_summary=row["notes_summary"] or ""
+        )
+
+    @staticmethod
+    def update_learner_profile(profile: LearnerProfile):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+        UPDATE learner_profiles SET
+            concepts_viewed = ?,
+            concepts_grasped = ?,
+            concepts_struggling = ?,
+            questions_asked_count = ?,
+            pinned_count = ?,
+            practice_accuracy = ?,
+            weak_areas = ?,
+            notes_summary = ?
+        WHERE session_id = ?
+        """, (
+            json.dumps(profile.concepts_viewed), json.dumps(profile.concepts_grasped),
+            json.dumps(profile.concepts_struggling), profile.questions_asked_count,
+            profile.pinned_count, profile.practice_accuracy, json.dumps(profile.weak_areas),
+            profile.notes_summary, profile.session_id
+        ))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def toggle_pin(item_type: str, item_id: str, is_pinned: bool) -> bool:
+        table_map = {
+            "session": "sessions",
+            "frame": "frames",
+            "concept": "concepts",
+            "message": "chat_messages",
+            "quiz": "quiz_questions"
+        }
+        table = table_map.get(item_type)
+        if not table:
+            return False
+        col = "is_bookmarked" if item_type == "quiz" else "is_pinned"
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(f"UPDATE {table} SET {col} = ? WHERE id = ?", (1 if is_pinned else 0, item_id))
+        conn.commit()
+        conn.close()
+        return True
+
+    @staticmethod
+    def search_all(query: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        q_term = f"%{query}%"
+        
+        # Concepts search
+        if session_id:
+            cursor.execute("SELECT * FROM concepts WHERE session_id = ? AND (name LIKE ? OR definition LIKE ? OR simple_explanation LIKE ?)", (session_id, q_term, q_term, q_term))
+        else:
+            cursor.execute("SELECT * FROM concepts WHERE name LIKE ? OR definition LIKE ? OR simple_explanation LIKE ?", (q_term, q_term, q_term))
+        c_rows = cursor.fetchall()
+        
+        # Transcript search
+        if session_id:
+            cursor.execute("SELECT * FROM transcript_segments WHERE session_id = ? AND text LIKE ?", (session_id, q_term))
+        else:
+            cursor.execute("SELECT * FROM transcript_segments WHERE text LIKE ?", (q_term,))
+        t_rows = cursor.fetchall()
+        
+        # Frames search
+        if session_id:
+            cursor.execute("SELECT * FROM frames WHERE session_id = ? AND (ocr_text LIKE ? OR visual_description LIKE ?)", (session_id, q_term, q_term))
+        else:
+            cursor.execute("SELECT * FROM frames WHERE ocr_text LIKE ? OR visual_description LIKE ?", (q_term, q_term))
+        f_rows = cursor.fetchall()
+        
+        conn.close()
+        return {
+            "concepts": [dict(r) for r in c_rows],
+            "transcripts": [dict(r) for r in t_rows],
+            "frames": [dict(r) for r in f_rows]
+        }
+
+    # ----------------- USER PROFILE & CREDIT MANAGEMENT -----------------
+    @staticmethod
+    def get_or_create_default_user() -> UserProfile:
+        u = DatabaseManager.get_user_by_email("demo_student@learnlens.ai")
+        if u:
+            return u
+        # fallback default profile
+        return UserProfile(
+            id="usr_demo_student_01",
+            email="demo_student@learnlens.ai",
+            name="Alex Kumar",
+            phone="+91 98765 43210",
+            avatar_url="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+            education_level="Undergraduate",
+            standard_class="3rd Year",
+            institution="Indian Institute of Technology",
+            degree_major="Computer Science & Engineering",
+            focus_topics=["Data Structures & Algorithms", "System Design", "Operating Systems", "Computer Networks"],
+            credits_balance=10,
+            total_credits_used=0,
+            subscription_tier="FREE_TRIAL"
+        )
+
+    @staticmethod
+    def get_user_by_email(email: str) -> Optional[UserProfile]:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE LOWER(email) = ?", (email.strip().lower(),))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return None
+        return UserProfile(
+            id=row["id"],
+            email=row["email"],
+            name=row["name"],
+            phone=row["phone"] or "",
+            avatar_url=row["avatar_url"] or "",
+            education_level=row["education_level"] or "Undergraduate",
+            standard_class=row["standard_class"] or "",
+            institution=row["institution"] or "",
+            degree_major=row["degree_major"] or "",
+            focus_topics=json.loads(row["focus_topics"] or "[]"),
+            credits_balance=int(row["credits_balance"] if row["credits_balance"] is not None else 10),
+            total_credits_used=int(row["total_credits_used"] or 0),
+            subscription_tier=row["subscription_tier"] or "FREE_TRIAL",
+            created_at=row["created_at"] or 0.0,
+            updated_at=row["updated_at"] or 0.0
+        )
+
+    @staticmethod
+    def get_user_by_id(user_id: str) -> Optional[UserProfile]:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return None
+        return UserProfile(
+            id=row["id"],
+            email=row["email"],
+            name=row["name"],
+            phone=row["phone"] or "",
+            avatar_url=row["avatar_url"] or "",
+            education_level=row["education_level"] or "Undergraduate",
+            standard_class=row["standard_class"] or "",
+            institution=row["institution"] or "",
+            degree_major=row["degree_major"] or "",
+            focus_topics=json.loads(row["focus_topics"] or "[]"),
+            credits_balance=int(row["credits_balance"] if row["credits_balance"] is not None else 10),
+            total_credits_used=int(row["total_credits_used"] or 0),
+            subscription_tier=row["subscription_tier"] or "FREE_TRIAL",
+            created_at=row["created_at"] or 0.0,
+            updated_at=row["updated_at"] or 0.0
+        )
+
+    @staticmethod
+    def create_user(profile: UserProfile, password_hash: str = "") -> UserProfile:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        now_ts = time.time()
+        cursor.execute("""
+        INSERT INTO users (id, email, password_hash, name, phone, avatar_url, education_level, standard_class, institution, degree_major, focus_topics, credits_balance, total_credits_used, subscription_tier, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            profile.id,
+            profile.email.strip().lower(),
+            password_hash,
+            profile.name,
+            profile.phone or "",
+            profile.avatar_url or "",
+            profile.education_level or "Undergraduate",
+            profile.standard_class or "",
+            profile.institution or "",
+            profile.degree_major or "",
+            json.dumps(profile.focus_topics or []),
+            profile.credits_balance,
+            profile.total_credits_used,
+            profile.subscription_tier,
+            now_ts,
+            now_ts
+        ))
+        cursor.execute("""
+        INSERT INTO credit_transactions (id, user_id, session_id, action, credits_change, balance_after, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            str(uuid.uuid4()),
+            profile.id,
+            None,
+            "WELCOME_SIGNUP_10_CREDITS",
+            10,
+            10,
+            now_ts
+        ))
+        conn.commit()
+        conn.close()
+        return profile
+
+    @staticmethod
+    def update_user_profile(user_id: str, updates: Dict[str, Any]) -> Optional[UserProfile]:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        fields = []
+        params = []
+        for k, v in updates.items():
+            if k == "focus_topics":
+                fields.append("focus_topics = ?")
+                params.append(json.dumps(v))
+            elif k in ("name", "phone", "avatar_url", "education_level", "standard_class", "institution", "degree_major", "subscription_tier"):
+                fields.append(f"{k} = ?")
+                params.append(v)
+        if not fields:
+            conn.close()
+            return DatabaseManager.get_user_by_id(user_id)
+        fields.append("updated_at = ?")
+        params.append(time.time())
+        params.append(user_id)
+        sql = f"UPDATE users SET {', '.join(fields)} WHERE id = ?"
+        cursor.execute(sql, tuple(params))
+        conn.commit()
+        conn.close()
+        return DatabaseManager.get_user_by_id(user_id)
+
+    @staticmethod
+    def get_user_credits(user_id: str) -> Dict[str, Any]:
+        user = DatabaseManager.get_user_by_id(user_id)
+        if not user:
+            user = DatabaseManager.get_or_create_default_user()
+        is_unlimited = user.subscription_tier in ("PRO_MONTHLY", "ANNUAL_PASS")
+        can_analyze = is_unlimited or user.credits_balance > 0
+        return {
+            "user_id": user.id,
+            "credits_balance": user.credits_balance,
+            "total_credits_used": user.total_credits_used,
+            "subscription_tier": user.subscription_tier,
+            "can_analyze": can_analyze,
+            "currency": "INR",
+            "monthly_price": 299,
+            "annual_price": 1999
+        }
+
+    @staticmethod
+    def consume_user_credit(user_id: str, session_id: Optional[str] = None, action: str = "LECTURE_ANALYSIS") -> Dict[str, Any]:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT credits_balance, total_credits_used, subscription_tier FROM users WHERE id = ?", (user_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            # fallback to default user
+            def_user = DatabaseManager.get_or_create_default_user()
+            return DatabaseManager.consume_user_credit(def_user.id, session_id, action)
+        
+        balance = int(row["credits_balance"] if row["credits_balance"] is not None else 10)
+        tier = row["subscription_tier"] or "FREE_TRIAL"
+        used = int(row["total_credits_used"] or 0)
+
+        if tier in ("PRO_MONTHLY", "ANNUAL_PASS"):
+            conn.close()
+            return {
+                "success": True,
+                "credits_balance": balance,
+                "total_credits_used": used + 1,
+                "subscription_tier": tier,
+                "can_analyze": True,
+                "message": "Unlimited Plan Active"
+            }
+
+        if balance <= 0:
+            conn.close()
+            return {
+                "success": False,
+                "credits_balance": 0,
+                "total_credits_used": used,
+                "subscription_tier": tier,
+                "can_analyze": False,
+                "error": "TRIAL_EXHAUSTED",
+                "message": "You have used all 10 Free Passes. Upgrade to Pro (₹299/month) to continue."
+            }
+
+        new_balance = balance - 1
+        new_used = used + 1
+        now_ts = time.time()
+        cursor.execute("UPDATE users SET credits_balance = ?, total_credits_used = ?, updated_at = ? WHERE id = ?", (new_balance, new_used, now_ts, user_id))
+        cursor.execute("""
+        INSERT INTO credit_transactions (id, user_id, session_id, action, credits_change, balance_after, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (str(uuid.uuid4()), user_id, session_id, action, -1, new_balance, now_ts))
+        conn.commit()
+        conn.close()
+        return {
+            "success": True,
+            "credits_balance": new_balance,
+            "total_credits_used": new_used,
+            "subscription_tier": tier,
+            "can_analyze": new_balance > 0,
+            "message": f"1 Study Pass used. {new_balance} free passes remaining."
+        }
