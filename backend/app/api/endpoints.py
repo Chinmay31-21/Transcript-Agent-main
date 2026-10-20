@@ -16,7 +16,8 @@ from backend.app.models.schemas import (
     PinItemRequest, SystemStatusResponse, TaskState, TeacherMode, CustomQuizRequest,
     UserProfile, UserRegisterRequest, UserLoginRequest, AuthResponse,
     UpdateProfileRequest, CreditStatusResponse, ConsumeCreditRequest,
-    NicheTopicItem, NicheFeedResponse
+    NicheTopicItem, NicheFeedResponse, StudentProgressSummary,
+    AdminApproveRequest, AdminTopupRequest, AdminUserActionResponse, AdminStatsResponse
 )
 from backend.app.db.database import DatabaseManager, get_session_dir, resolve_frame_path
 from backend.app.services.screenshot_service import screenshot_service
@@ -136,69 +137,132 @@ async def consume_credit(req: ConsumeCreditRequest, user_id: Optional[str] = Que
         return JSONResponse(status_code=402, content=res)
     return res
 
+# ----------------- OVERALL LEARNING PROGRESS ENDPOINT -----------------
+@router.get("/user/progress", response_model=StudentProgressSummary)
+async def get_student_progress(user_id: Optional[str] = Query(None)):
+    summary = DatabaseManager.get_student_overall_progress(user_id)
+    return StudentProgressSummary(**summary)
+
+# ----------------- ADMIN USER & SUBSCRIPTION MANAGEMENT -----------------
+@router.get("/admin/stats", response_model=AdminStatsResponse)
+async def get_admin_dashboard_stats():
+    stats = DatabaseManager.get_admin_stats()
+    return AdminStatsResponse(**stats)
+
+@router.get("/admin/users", response_model=List[UserProfile])
+async def get_all_users_for_admin():
+    return DatabaseManager.list_all_users()
+
+@router.post("/admin/users/approve", response_model=AdminUserActionResponse)
+async def admin_approve_user(req: AdminApproveRequest):
+    res = DatabaseManager.admin_approve_subscription(
+        user_id=req.user_id,
+        tier=req.tier,
+        send_email=req.send_email,
+        temp_pass=req.temp_password
+    )
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail="Could not approve subscription")
+    return AdminUserActionResponse(**res)
+
+@router.post("/admin/users/topup", response_model=AdminUserActionResponse)
+async def admin_topup_user(req: AdminTopupRequest):
+    res = DatabaseManager.admin_topup_credits(
+        user_id=req.user_id,
+        credits_to_add=req.credits_to_add,
+        reason=req.reason
+    )
+    user = DatabaseManager.get_user_by_id(req.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return AdminUserActionResponse(
+        success=res.get("success", True),
+        user=user,
+        message=res.get("message", "Credits topped up successfully"),
+        email_dispatched=False
+    )
+
 # ----------------- DISTRACTION-FREE NICHE CURATED FEED -----------------
 @router.get("/curated/niche-feed", response_model=NicheFeedResponse)
 async def get_niche_feed(user_id: Optional[str] = Query(None)):
     user = DatabaseManager.get_user_by_id(user_id) if user_id else DatabaseManager.get_or_create_default_user()
-    stream = user.degree_major or "Computer Science & Engineering"
+    stream = user.branch or user.degree_major or "Computer Science & Engineering"
     level = user.education_level or "Undergraduate"
-    standard = user.standard_class or "3rd Year"
+    standard = user.current_year or user.standard_class or "3rd Year"
+    aim = user.ultimate_aim or "Crack Google SDE-1 / Top Product Companies"
+    interests = user.area_of_interest if user.area_of_interest else user.focus_topics
 
+    # Smart personalized recommendations matching student branch, year, interest & aim
     curated: List[NicheTopicItem] = [
         NicheTopicItem(
             id="cur_dsa_01",
             title="Fastest Way to Learn DSA in 2026 (Without Wasting Time)",
             topic="Data Structures & Algorithms",
+            channel_name="take U forward (Striver)",
             target_stream="Computer Science & Engineering",
             source_url="https://www.youtube.com/watch?v=kQW4t_WdZ5U",
+            video_id="kQW4t_WdZ5U",
             duration_minutes=24,
             difficulty="Beginner",
             thumbnail_url="https://images.unsplash.com/photo-1516116211227-bbc13c73335c?w=400&auto=format&fit=crop&q=80",
-            description="Proven 12-week roadmap covering arrays, trees, dynamic programming patterns, and interview strategies."
+            description="Proven roadmap covering arrays, trees, dynamic programming patterns, and high-frequency FAANG interview patterns.",
+            why_recommended=f"Aligned with your aim: {aim} and {standard} curriculum."
         ),
         NicheTopicItem(
             id="cur_sys_02",
             title="System Design Fundamentals: Load Balancing & Caching",
             topic="System Design",
+            channel_name="NeetCode / Gaurav Sen",
             target_stream="Computer Science & Engineering",
             source_url="https://www.youtube.com/watch?v=F2OxP4_8b7A",
+            video_id="F2OxP4_8b7A",
             duration_minutes=38,
             difficulty="Intermediate",
             thumbnail_url="https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=400&auto=format&fit=crop&q=80",
-            description="High-level architecture, horizontal scaling, consistent hashing, and Redis caching layers."
+            description="High-level architecture, horizontal scaling, consistent hashing, and Redis caching layers.",
+            why_recommended="Essential for product company architecture interviews."
         ),
         NicheTopicItem(
             id="cur_os_03",
             title="Operating Systems: Process Synchronization & Semaphores",
             topic="Operating Systems",
+            channel_name="Gate Smashers",
             target_stream="Computer Science & Engineering",
             source_url="https://www.youtube.com/watch?v=ph2A4pS9w34",
+            video_id="ph2A4pS9w34",
             duration_minutes=31,
             difficulty="Intermediate",
             thumbnail_url="https://images.unsplash.com/photo-1629654297299-c8506221ca97?w=400&auto=format&fit=crop&q=80",
-            description="Critical section problem, Peterson's algorithm, mutex locks, and deadlock avoidance."
+            description="Critical section problem, Peterson's algorithm, mutex locks, and deadlock avoidance.",
+            why_recommended=f"Core subject for {standard} semester exams & GATE."
         ),
         NicheTopicItem(
             id="cur_cn_04",
             title="Computer Networks: TCP 3-Way Handshake & Congestion Control",
             topic="Computer Networks",
+            channel_name="Hussein Nasser",
             target_stream="Computer Science & Engineering",
             source_url="https://www.youtube.com/watch?v=3g6_m8D7k_8",
+            video_id="3g6_m8D7k_8",
             duration_minutes=29,
             difficulty="Advanced",
             thumbnail_url="https://images.unsplash.com/photo-1544197150-b99a580bb7a8?w=400&auto=format&fit=crop&q=80",
-            description="Transport layer mechanics, sequence numbers, window sizing, and Reno/CUBIC algorithms."
+            description="Transport layer mechanics, sequence numbers, window sizing, and Reno/CUBIC algorithms.",
+            why_recommended="Deep-dive network packet mechanics for engineering mastery."
         ),
         NicheTopicItem(
             id="cur_math_05",
             title="Engineering Mathematics: Linear Algebra & Eigenvalues",
             topic="Mathematics",
+            channel_name="3Blue1Brown",
             target_stream="STEM / All Engineering",
             source_url="https://www.youtube.com/watch?v=PFDu9oVAE-g",
+            video_id="PFDu9oVAE-g",
             duration_minutes=42,
             difficulty="Intermediate",
             thumbnail_url="https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=400&auto=format&fit=crop&q=80",
-            description="Intuitive visual geometric interpretation of matrix transformations and characteristic equations."
+            description="Intuitive visual geometric interpretation of matrix transformations and characteristic equations.",
+            why_recommended="Foundation for machine learning algorithms and quantitative interviews."
         )
     ]
 
@@ -206,6 +270,10 @@ async def get_niche_feed(user_id: Optional[str] = Query(None)):
         education_level=level,
         degree_major=stream,
         standard_class=standard,
+        branch=stream,
+        current_year=standard,
+        ultimate_aim=aim,
+        area_of_interest=interests,
         focus_topics=user.focus_topics,
         curated_topics=curated
     )
@@ -697,5 +765,292 @@ async def update_system_settings(req: SystemSettingsUpdate):
     if req.enable_live_whisper is not None:
         settings.ENABLE_LIVE_WHISPER = req.enable_live_whisper
     return {"status": "UPDATED", "settings": await get_system_settings()}
+
+
+# =========================================================================
+# ----------------- USER AUTHENTICATION & PROFILE ENDPOINTS ---------------
+# =========================================================================
+
+@router.post("/auth/register", response_model=AuthResponse)
+async def register_user(req: UserRegisterRequest):
+    existing = DatabaseManager.get_user_by_email(req.email)
+    if existing:
+        raise HTTPException(status_code=400, detail="An account with this email already exists.")
+    
+    tier = req.plan_selected or "FREE_TRIAL"
+    is_paid_plan = tier in ("PRO_MONTHLY", "ANNUAL_PASS")
+    payment_status = "PENDING_APPROVAL" if is_paid_plan else "FREE_TRIAL_ACTIVE"
+    is_approved = not is_paid_plan
+
+    profile_obj = UserProfile(
+        email=req.email.strip().lower(),
+        name=req.name,
+        phone=req.phone or "",
+        education_level=req.education_level or "Undergraduate",
+        standard_class=req.standard_class or req.current_year or "3rd Year",
+        institution=req.institution or "",
+        degree_major=req.degree_major or req.branch or "Computer Science & Engineering",
+        branch=req.branch or req.degree_major or "Computer Science & Engineering",
+        current_year=req.current_year or req.standard_class or "3rd Year",
+        area_of_interest=req.area_of_interest or ["Data Structures & Algorithms", "System Design"],
+        ultimate_aim=req.ultimate_aim or "Crack Google SDE-1 / Top Product Companies",
+        focus_topics=req.focus_topics or ["Data Structures & Algorithms", "System Design"],
+        subscription_tier=tier,
+        payment_status=payment_status,
+        payment_reference=req.payment_reference or "",
+        is_approved_by_admin=is_approved,
+        credentials_sent=False,
+        role="STUDENT"
+    )
+    
+    saved_profile = DatabaseManager.create_user(profile_obj, req.password)
+    token = f"token_{saved_profile.id}_{int(time.time())}"
+    
+    if is_paid_plan and req.payment_reference:
+        msg = f"Registration received with Payment Reference {req.payment_reference}. Administrator will verify payment and email your credentials shortly."
+    else:
+        msg = "Account created successfully with 10 Free Passes!"
+        
+    return AuthResponse(
+        success=True,
+        token=token,
+        user=saved_profile,
+        message=msg
+    )
+
+@router.post("/auth/login", response_model=AuthResponse)
+async def login_user(req: UserLoginRequest):
+    user = DatabaseManager.get_user_by_email(req.email)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found with this email.")
+    
+    token = f"token_{user.id}_{int(time.time())}"
+    return AuthResponse(
+        success=True,
+        token=token,
+        user=user,
+        message="Logged in successfully."
+    )
+
+@router.get("/auth/me", response_model=UserProfile)
+async def get_current_user_profile(user_id: Optional[str] = Query(None)):
+    if user_id:
+        u = DatabaseManager.get_user_by_id(user_id)
+        if u:
+            return u
+    return DatabaseManager.get_or_create_default_user()
+
+@router.put("/user/profile", response_model=UserProfile)
+async def update_current_user_profile(req: UpdateProfileRequest, user_id: Optional[str] = Query(None)):
+    target_user = DatabaseManager.get_user_by_id(user_id) if user_id else DatabaseManager.get_or_create_default_user()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    
+    updates = req.model_dump(exclude_unset=True)
+    updated = DatabaseManager.update_user_profile(target_user.id, updates)
+    return updated or target_user
+
+@router.get("/user/credits", response_model=CreditStatusResponse)
+async def get_user_credits_endpoint(user_id: Optional[str] = Query(None)):
+    target_user = DatabaseManager.get_user_by_id(user_id) if user_id else DatabaseManager.get_or_create_default_user()
+    data = DatabaseManager.get_user_credits(target_user.id)
+    return CreditStatusResponse(**data)
+
+@router.post("/user/consume-credit")
+async def consume_user_credit_endpoint(req: ConsumeCreditRequest, user_id: Optional[str] = Query(None)):
+    target_user = DatabaseManager.get_user_by_id(user_id) if user_id else DatabaseManager.get_or_create_default_user()
+    res = DatabaseManager.consume_user_credit(target_user.id, req.session_id, req.action)
+    return res
+
+@router.get("/user/progress", response_model=StudentProgressSummary)
+async def get_student_overall_progress_endpoint(user_id: Optional[str] = Query(None)):
+    """
+    Returns student's overall learning progress metrics:
+    - Study streak & total hours learned
+    - Total sessions, concepts mastered vs struggling
+    - Transcripts words ingested & screenshots auto-captured
+    - Practice quiz accuracy & topic mastery breakdown
+    """
+    data = DatabaseManager.get_student_overall_progress(user_id)
+    return StudentProgressSummary(**data)
+
+
+# =========================================================================
+# --------- DISTRACTION-FREE PERSONALIZED STUDY RECOMMENDATIONS -----------
+# =========================================================================
+
+@router.get("/curated/niche-feed", response_model=NicheFeedResponse)
+async def get_curated_niche_feed(user_id: Optional[str] = Query(None)):
+    """
+    Returns tailored YouTube study recommendations and channels directly matched to:
+    - Branch / Degree
+    - Current Year of Study
+    - Area of Interest
+    - Ultimate Aim (Optional, e.g. Crack Google SDE-1 / GATE AIR < 100)
+    """
+    user = DatabaseManager.get_user_by_id(user_id) if user_id else DatabaseManager.get_or_create_default_user()
+    branch = user.branch or user.degree_major or "Computer Science & Engineering"
+    year = user.current_year or user.standard_class or "3rd Year"
+    aim = user.ultimate_aim or "Crack Google SDE-1 / Top Product Companies"
+    interests = user.area_of_interest or ["Data Structures & Algorithms", "System Design", "Operating Systems"]
+
+    # Catalog of verified, high-yield educational YouTube lecture videos with working embeds & channels
+    catalog = [
+        NicheTopicItem(
+            id="yt-dsa-striver",
+            title="Complete Dynamic Programming Masterclass & Memoization",
+            topic="Dynamic Programming & Recursion",
+            channel_name="take U forward (Striver)",
+            target_stream="CSE / IT / Placement Prep",
+            source_url="https://www.youtube.com/watch?v=FfXoiwnn6ey",
+            video_id="FfXoiwnn6ey",
+            duration_minutes=48,
+            difficulty="Intermediate",
+            thumbnail_url="https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=600&auto=format&fit=crop&q=80",
+            description="Deep dive into 1D and 2D Dynamic Programming patterns, overlapping subproblems, and optimal substructure with dry-run visuals.",
+            why_recommended=f"Essential for your aim '{aim}' as a {year} {branch} student preparing for top coding interviews."
+        ),
+        NicheTopicItem(
+            id="yt-sysdesign-gaurav",
+            title="System Design Primer: Designing Scalable Distributed Caching",
+            topic="System Design & Scalability",
+            channel_name="Gaurav Sen",
+            target_stream="CSE / High Level Design",
+            source_url="https://www.youtube.com/watch?v=U3RkDLtS7uY",
+            video_id="U3RkDLtS7uY",
+            duration_minutes=35,
+            difficulty="Advanced",
+            thumbnail_url="https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=600&auto=format&fit=crop&q=80",
+            description="Understand cache eviction policies (LRU/LFU), Write-Through vs Write-Back, Redis clusters, and latency reduction in real-time architectures.",
+            why_recommended=f"Directly accelerates your interest in System Design and supports target goal '{aim}'."
+        ),
+        NicheTopicItem(
+            id="yt-os-gatesmashers",
+            title="Operating Systems: Concurrency, Semaphores & Deadlock Prevention",
+            topic="Operating Systems & Concurrency",
+            channel_name="Gate Smashers",
+            target_stream="GATE CSE / Semester Core",
+            source_url="https://www.youtube.com/watch?v=1r_A_r_vAEM",
+            video_id="1r_A_r_vAEM",
+            duration_minutes=29,
+            difficulty="Intermediate",
+            thumbnail_url="https://images.unsplash.com/photo-1629654297299-c8506221ca97?w=600&auto=format&fit=crop&q=80",
+            description="Clear animated breakdown of mutexes, counting semaphores, critical section problem, and Banker's algorithm with numerical proofs.",
+            why_recommended=f"Matches your {year} core curriculum in {branch} and builds foundational problem-solving rigor."
+        ),
+        NicheTopicItem(
+            id="yt-3blue1brown-linalg",
+            title="Essence of Linear Algebra: Vectors, Span & Basis Transformations",
+            topic="Mathematics & ML Foundations",
+            channel_name="3Blue1Brown",
+            target_stream="AI / Data Science / Engineering Math",
+            source_url="https://www.youtube.com/watch?v=fNk_zzaMoSs",
+            video_id="fNk_zzaMoSs",
+            duration_minutes=22,
+            difficulty="Beginner",
+            thumbnail_url="https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=600&auto=format&fit=crop&q=80",
+            description="World-renowned geometric intuition behind matrix transformations, eigen-values, and multidimensional dot products.",
+            why_recommended=f"Fundamental mathematical bedrock for Machine Learning and algorithm optimization."
+        ),
+        NicheTopicItem(
+            id="yt-neetcode-trees",
+            title="Binary Tree Traversal, DFS/BFS & Lowest Common Ancestor",
+            topic="Data Structures & Algorithms",
+            channel_name="NeetCode",
+            target_stream="FAANG / LeetCode Roadmap",
+            source_url="https://www.youtube.com/watch?v=OnSn2XEQ4MY",
+            video_id="OnSn2XEQ4MY",
+            duration_minutes=32,
+            difficulty="Intermediate",
+            thumbnail_url="https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600&auto=format&fit=crop&q=80",
+            description="Interactive step-by-step recursion trees, time-space complexity proofs, and edge cases for top product interview questions.",
+            why_recommended=f"High frequency interview topic for {branch} students targeting tier-1 software roles."
+        ),
+        NicheTopicItem(
+            id="yt-cn-firewall",
+            title="Computer Networks: Packet Filtering, Next-Gen Firewalls & TLS 1.3",
+            topic="Computer Networks & Security",
+            channel_name="NetworkChuck",
+            target_stream="Cybersecurity / DevOps",
+            source_url="https://www.youtube.com/watch?v=kd0x89n4yHk",
+            video_id="kd0x89n4yHk",
+            duration_minutes=27,
+            difficulty="Beginner",
+            thumbnail_url="https://images.unsplash.com/photo-1563986768609-322da13575f3?w=600&auto=format&fit=crop&q=80",
+            description="Hands-on demonstration of network traffic packets, OSI layers inspection, stateful vs stateless packet inspection, and zero trust.",
+            why_recommended=f"Practical cybersecurity knowledge tailored to modern infrastructure engineering."
+        )
+    ]
+
+    return NicheFeedResponse(
+        education_level=user.education_level or "Undergraduate",
+        degree_major=branch,
+        standard_class=year,
+        branch=branch,
+        current_year=year,
+        ultimate_aim=aim,
+        area_of_interest=interests,
+        focus_topics=interests,
+        curated_topics=catalog
+    )
+
+
+# =========================================================================
+# -------------------- ADMIN PORTAL & SUBSCRIPTION MANAGEMENT -------------
+# =========================================================================
+
+@router.get("/admin/stats", response_model=AdminStatsResponse)
+async def get_admin_dashboard_stats():
+    """
+    Returns platform statistics for Admin review:
+    - Total registered students
+    - Active Pro / Annual subscribers
+    - Pending registrations waiting for payment verification
+    - Total revenue in INR
+    - Total analyzed lectures & PPT decks generated
+    - Complete students list with payment reference and credentials status
+    """
+    stats = DatabaseManager.get_admin_stats()
+    return AdminStatsResponse(**stats)
+
+@router.get("/admin/users")
+async def get_admin_users_list():
+    users = DatabaseManager.list_all_users()
+    return {"users": users}
+
+@router.post("/admin/users/approve", response_model=AdminUserActionResponse)
+async def admin_approve_user_subscription(req: AdminApproveRequest):
+    """
+    Admin verifies student payment receipt / reference and approves subscription:
+    - Unlocks unlimited access (PRO_MONTHLY / ANNUAL_PASS)
+    - Updates payment_status to 'PAID_APPROVED'
+    - Dispatches welcome confirmation and login credentials to student's email
+    """
+    res = DatabaseManager.admin_approve_subscription(
+        user_id=req.user_id,
+        tier=req.tier or "PRO_MONTHLY",
+        send_email=req.send_email,
+        temp_pass=req.temp_password
+    )
+    return AdminUserActionResponse(**res)
+
+@router.post("/admin/users/topup", response_model=AdminUserActionResponse)
+async def admin_topup_user_credits(req: AdminTopupRequest):
+    """
+    Admin adds study passes / credits to a student's account.
+    """
+    user = DatabaseManager.get_user_by_id(req.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    
+    res = DatabaseManager.admin_topup_credits(req.user_id, req.credits_to_add, req.reason)
+    user_updated = DatabaseManager.get_user_by_id(req.user_id)
+    return AdminUserActionResponse(
+        success=res["success"],
+        user=user_updated,
+        message=res["message"],
+        email_dispatched=False
+    )
+
 
 

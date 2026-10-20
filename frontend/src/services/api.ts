@@ -10,7 +10,10 @@ import {
   TeacherMode,
   UserProfile,
   CreditStatus,
-  NicheFeed
+  NicheFeed,
+  StudentProgressSummary,
+  AdminStatsResponse,
+  AdminUserActionResponse
 } from '../types';
 
 const formatApiUrl = (raw: string): string => {
@@ -505,5 +508,94 @@ export const api = {
     const res = await fetch(url);
     if (!res.ok) throw new Error('Failed to fetch niche feed');
     return res.json();
+  },
+
+  // ----------------- STUDENT OVERALL PROGRESS -----------------
+  async getStudentProgress(userId?: string): Promise<StudentProgressSummary> {
+    const url = userId ? `${API_BASE}/user/progress?user_id=${encodeURIComponent(userId)}` : `${API_BASE}/user/progress`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Failed to fetch student progress');
+    return res.json();
+  },
+
+  // ----------------- AUTH REGISTRATION & LOGIN -----------------
+  async registerUser(data: {
+    email: string;
+    password: string;
+    name: string;
+    phone?: string;
+    branch?: string;
+    current_year?: string;
+    area_of_interest?: string[];
+    ultimate_aim?: string;
+    plan_selected?: string;
+    payment_reference?: string;
+  }): Promise<any> {
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Registration failed');
+    }
+    return res.json();
+  },
+
+  async loginUser(credentials: { email: string; password: string }): Promise<any> {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(credentials),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Login failed');
+    }
+    return res.json();
+  },
+
+  // ----------------- ADMIN DASHBOARD & APPROVALS -----------------
+  async getAdminStats(): Promise<AdminStatsResponse> {
+    const res = await fetch(`${API_BASE}/admin/stats`);
+    if (!res.ok) throw new Error('Failed to fetch admin stats');
+    return res.json();
+  },
+
+  async getAdminUsers(): Promise<{ users: UserProfile[] }> {
+    const res = await fetch(`${API_BASE}/admin/users`);
+    if (!res.ok) throw new Error('Failed to fetch users list');
+    return res.json();
+  },
+
+  async adminApproveUser(data: {
+    user_id: string;
+    tier?: string;
+    send_email?: boolean;
+    temp_password?: string;
+  }): Promise<AdminUserActionResponse> {
+    const res = await fetch(`${API_BASE}/admin/users/approve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to approve user');
+    return res.json();
+  },
+
+  async adminTopupUser(data: {
+    user_id: string;
+    credits_to_add: number;
+    reason?: string;
+  }): Promise<AdminUserActionResponse> {
+    const res = await fetch(`${API_BASE}/admin/users/topup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to top-up passes');
+    return res.json();
   }
 };
+

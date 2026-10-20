@@ -14,7 +14,10 @@ import {
   Settings,
   Search,
   CheckCircle2,
-  Compass
+  Compass,
+  BarChart3,
+  PlayCircle,
+  ShieldCheck
 } from 'lucide-react';
 import { LearningSession, SystemStatus, UserProfile } from '../types';
 
@@ -88,17 +91,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </p>
           
           <SidebarNavItem
-            icon={<Home className="w-3.5 h-3.5" />}
-            label="Overview"
-            active={currentTab === 'dashboard'}
-            onClick={() => setCurrentTab('dashboard')}
+            icon={<BarChart3 className="w-3.5 h-3.5 text-sky-400" />}
+            label="Progress"
+            active={currentTab === 'progress'}
+            onClick={() => setCurrentTab('progress')}
+          />
+          <SidebarNavItem
+            icon={<PlayCircle className="w-3.5 h-3.5 text-red-400" />}
+            label="YouTube Study"
+            active={currentTab === 'youtube_study'}
+            onClick={() => setCurrentTab('youtube_study')}
           />
           <SidebarNavItem
             icon={<Radio className="w-3.5 h-3.5" />}
-            label="Live"
+            label="Live Studio"
             active={currentTab === 'live'}
             onClick={() => setCurrentTab('live')}
             isLiveDot={true}
+          />
+          <SidebarNavItem
+            icon={<Compass className="w-3.5 h-3.5 text-indigo-400" />}
+            label="Niche Hub"
+            active={currentTab === 'niche'}
+            onClick={() => setCurrentTab('niche')}
           />
           <SidebarNavItem
             icon={<GraduationCap className="w-3.5 h-3.5" />}
@@ -137,10 +152,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onClick={() => setCurrentTab('artifacts')}
           />
           <SidebarNavItem
-            icon={<Compass className="w-3.5 h-3.5 text-indigo-400" />}
-            label="Niche Hub"
-            active={currentTab === 'niche'}
-            onClick={() => setCurrentTab('niche')}
+            icon={<ShieldCheck className="w-3.5 h-3.5 text-amber-400" />}
+            label="Admin Portal"
+            active={currentTab === 'admin'}
+            onClick={() => setCurrentTab('admin')}
           />
         </div>
 

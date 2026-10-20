@@ -213,14 +213,23 @@ class UserProfile(BaseModel):
     name: str
     phone: Optional[str] = ""
     avatar_url: Optional[str] = ""
-    education_level: str = "Undergraduate"  # School, High School, Undergraduate, Postgraduate, Competitive Exam
+    education_level: str = "Undergraduate"
     standard_class: Optional[str] = "3rd Year"
     institution: Optional[str] = "Indian Institute of Technology"
     degree_major: Optional[str] = "Computer Science & Engineering"
+    branch: Optional[str] = "Computer Science & Engineering"
+    current_year: Optional[str] = "3rd Year"
+    area_of_interest: List[str] = ["Data Structures & Algorithms", "System Design", "Operating Systems"]
+    ultimate_aim: Optional[str] = "Crack Google SDE-1 / Top Product Companies"
     focus_topics: List[str] = ["Data Structures & Algorithms", "System Design", "Operating Systems"]
     credits_balance: int = 10
     total_credits_used: int = 0
     subscription_tier: str = "FREE_TRIAL"  # FREE_TRIAL, PRO_MONTHLY, ANNUAL_PASS
+    payment_status: str = "FREE_TRIAL_ACTIVE"  # FREE_TRIAL_ACTIVE, PENDING_APPROVAL, PAID_APPROVED, REJECTED
+    payment_reference: Optional[str] = ""
+    is_approved_by_admin: bool = True
+    credentials_sent: bool = False
+    role: str = "STUDENT"  # STUDENT, ADMIN
     created_at: float = Field(default_factory=time.time)
     updated_at: float = Field(default_factory=time.time)
 
@@ -230,10 +239,16 @@ class UserRegisterRequest(BaseModel):
     name: str
     phone: Optional[str] = ""
     education_level: Optional[str] = "Undergraduate"
-    standard_class: Optional[str] = "1st Year"
+    standard_class: Optional[str] = "3rd Year"
     institution: Optional[str] = ""
     degree_major: Optional[str] = ""
+    branch: Optional[str] = "Computer Science & Engineering"
+    current_year: Optional[str] = "3rd Year"
+    area_of_interest: Optional[List[str]] = []
+    ultimate_aim: Optional[str] = ""
     focus_topics: Optional[List[str]] = []
+    plan_selected: Optional[str] = "FREE_TRIAL"
+    payment_reference: Optional[str] = ""
 
 class UserLoginRequest(BaseModel):
     email: str
@@ -253,6 +268,10 @@ class UpdateProfileRequest(BaseModel):
     standard_class: Optional[str] = None
     institution: Optional[str] = None
     degree_major: Optional[str] = None
+    branch: Optional[str] = None
+    current_year: Optional[str] = None
+    area_of_interest: Optional[List[str]] = None
+    ultimate_aim: Optional[str] = None
     focus_topics: Optional[List[str]] = None
 
 class CreditStatusResponse(BaseModel):
@@ -273,17 +292,72 @@ class NicheTopicItem(BaseModel):
     id: str
     title: str
     topic: str
+    channel_name: Optional[str] = "Recommended Channel"
     target_stream: str
     source_url: str
+    video_id: Optional[str] = ""
     duration_minutes: int
     difficulty: str  # Beginner, Intermediate, Advanced
     thumbnail_url: str
     description: str
+    why_recommended: Optional[str] = ""
 
 class NicheFeedResponse(BaseModel):
     education_level: str
     degree_major: str
     standard_class: str
+    branch: Optional[str] = "Computer Science & Engineering"
+    current_year: Optional[str] = "3rd Year"
+    ultimate_aim: Optional[str] = ""
+    area_of_interest: List[str] = []
     focus_topics: List[str]
     curated_topics: List[NicheTopicItem]
+
+# ----------------- OVERALL PROGRESS & ADMIN SCHEMAS -----------------
+class StudentProgressSummary(BaseModel):
+    user_id: str
+    name: str
+    branch: str
+    current_year: str
+    ultimate_aim: str
+    total_study_hours: float
+    total_sessions: int
+    total_concepts_learned: int
+    concepts_grasped: int
+    concepts_struggling: int
+    total_screenshots_captured: int
+    total_transcripts_words: int
+    practice_accuracy_pct: int
+    study_streak_days: int
+    credits_remaining: int
+    subscription_tier: str
+    top_mastered_topics: List[Dict[str, Any]]
+    recent_activity: List[Dict[str, Any]]
+
+class AdminApproveRequest(BaseModel):
+    user_id: str
+    tier: str = "PRO_MONTHLY"
+    send_email: bool = True
+    temp_password: Optional[str] = None
+
+class AdminTopupRequest(BaseModel):
+    user_id: str
+    credits_to_add: int = 10
+    reason: str = "ADMIN_TOPUP"
+
+class AdminUserActionResponse(BaseModel):
+    success: bool
+    user: UserProfile
+    message: str
+    email_dispatched: bool = False
+    dispatched_details: Optional[Dict[str, Any]] = None
+
+class AdminStatsResponse(BaseModel):
+    total_students: int
+    active_pro_subscribers: int
+    pending_approvals: int
+    total_revenue_inr: int
+    total_lectures_analyzed: int
+    total_ppts_generated: int
+    users_list: List[UserProfile]
 

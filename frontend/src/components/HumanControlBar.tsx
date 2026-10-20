@@ -14,6 +14,7 @@ interface HumanControlBarProps {
   activeSession: LearningSession | null;
   user?: UserProfile | null;
   onOpenProfile?: () => void;
+  onNavigateHome?: () => void;
   onPause: () => void;
   onResume: () => void;
   onStop: () => void;
@@ -29,6 +30,7 @@ export const HumanControlBar: React.FC<HumanControlBarProps> = ({
   activeSession,
   user,
   onOpenProfile,
+  onNavigateHome,
   onPause,
   onResume,
   onStop,
@@ -42,23 +44,30 @@ export const HumanControlBar: React.FC<HumanControlBarProps> = ({
   return (
     <header className="h-16 bg-slate-900/60 backdrop-blur-xl border-b border-white/10 px-5 flex items-center justify-between z-20 shrink-0 shadow-2xl select-none">
       
-      {/* LEFT: BRAND LOGO & TAGLINE MATCHING REFERENCE */}
+      {/* LEFT: BRAND LOGO & TAGLINE MATCHING REFERENCE - CLICKABLE HOME REDIRECT */}
       <div className="flex items-center gap-6">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-sky-500 to-slate-700 flex items-center justify-center shadow-metallic-subtle text-white border border-slate-600">
+        <button
+          onClick={onNavigateHome}
+          className="flex items-center gap-2.5 text-left group hover:opacity-90 transition-all cursor-pointer p-1 -m-1 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500/50"
+          title="Return to LearnLens AI Home & Learning Dashboard"
+        >
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-sky-500 to-slate-700 flex items-center justify-center shadow-metallic-subtle text-white border border-slate-600 group-hover:border-sky-400 group-hover:scale-105 transition-all">
             <Video className="w-4 h-4 fill-white" />
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <h1 className="font-bold text-sm text-slate-100 tracking-tight">
+              <h1 className="font-bold text-sm text-slate-100 tracking-tight group-hover:text-sky-300 transition-colors">
                 LearnLens AI
               </h1>
+              <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30 font-semibold">
+                Home
+              </span>
             </div>
             <p className="text-[10px] text-slate-400 font-medium">
               Watch • Listen • Learn • Grow
             </p>
           </div>
-        </div>
+        </button>
 
         {/* Vertical divider */}
         <div className="h-7 w-[1px] bg-white/10 hidden md:block" />

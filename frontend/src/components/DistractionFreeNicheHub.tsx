@@ -20,12 +20,14 @@ import { api } from '../services/api';
 interface DistractionFreeNicheHubProps {
   user: UserProfile | null;
   onSelectVideoForStudy: (videoUrl: string, title: string) => void;
+  onOpenYouTubeWorkspace?: (videoId?: string, title?: string, channel?: string) => void;
   onOpenProfile: () => void;
 }
 
 export const DistractionFreeNicheHub: React.FC<DistractionFreeNicheHubProps> = ({
   user,
   onSelectVideoForStudy,
+  onOpenYouTubeWorkspace,
   onOpenProfile,
 }) => {
   const [feed, setFeed] = useState<NicheFeed | null>(null);
@@ -173,10 +175,15 @@ export const DistractionFreeNicheHub: React.FC<DistractionFreeNicheHubProps> = (
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent" />
                   
-                  <div className="absolute top-3 left-3">
+                  <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
                     <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-900/80 text-emerald-400 backdrop-blur-md border border-emerald-500/30">
                       {topic.topic}
                     </span>
+                    {topic.channel_name && (
+                      <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-red-600/90 text-white backdrop-blur-md">
+                        {topic.channel_name}
+                      </span>
+                    )}
                   </div>
 
                   <div className="absolute bottom-3 right-3 flex items-center gap-2">
@@ -190,21 +197,33 @@ export const DistractionFreeNicheHub: React.FC<DistractionFreeNicheHubProps> = (
                 </div>
 
                 {/* Content */}
-                <div className="p-5 space-y-2">
+                <div className="p-5 space-y-2.5">
                   <h4 className="font-bold text-slate-900 dark:text-white text-sm line-clamp-2 leading-snug group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                     {topic.title}
                   </h4>
                   <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
                     {topic.description}
                   </p>
+
+                  {topic.why_recommended && (
+                    <div className="p-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/40 text-[11px] text-indigo-700 dark:text-indigo-300 font-medium">
+                      💡 {topic.why_recommended}
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* Action Button */}
               <div className="p-5 pt-0">
                 <button
-                  onClick={() => onSelectVideoForStudy(topic.source_url, topic.title)}
-                  className="w-full py-2.5 px-4 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-emerald-600 dark:hover:bg-emerald-600 text-white font-semibold text-xs transition-colors flex items-center justify-center gap-2 group-hover:bg-emerald-600 shadow-sm"
+                  onClick={() => {
+                    if (onOpenYouTubeWorkspace && topic.video_id) {
+                      onOpenYouTubeWorkspace(topic.video_id, topic.title, topic.channel_name);
+                    } else {
+                      onSelectVideoForStudy(topic.source_url, topic.title);
+                    }
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-emerald-600 dark:hover:bg-emerald-600 text-white font-semibold text-xs transition-colors flex items-center justify-center gap-2 group-hover:bg-emerald-600 shadow-sm cursor-pointer"
                 >
                   <Play className="w-3.5 h-3.5 fill-current" />
                   <span>Study with LearnLens AI</span>

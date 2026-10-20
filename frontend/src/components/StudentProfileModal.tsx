@@ -38,11 +38,13 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [educationLevel, setEducationLevel] = useState('Undergraduate');
-  const [standardClass, setStandardClass] = useState('3rd Year');
+  const [branch, setBranch] = useState('Computer Science & Engineering');
+  const [currentYear, setCurrentYear] = useState('3rd Year');
   const [institution, setInstitution] = useState('Indian Institute of Technology');
   const [degreeMajor, setDegreeMajor] = useState('Computer Science & Engineering');
+  const [areaOfInterestInput, setAreaOfInterestInput] = useState('Data Structures & Algorithms, System Design, Operating Systems');
+  const [ultimateAim, setUltimateAim] = useState('Crack Google SDE-1 / Top Product Companies');
   const [focusTopicsInput, setFocusTopicsInput] = useState('');
-  const [focusTopics, setFocusTopics] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -52,11 +54,16 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
       setEmail(user.email || '');
       setPhone(user.phone || '');
       setEducationLevel(user.education_level || 'Undergraduate');
-      setStandardClass(user.standard_class || '3rd Year');
+      setBranch(user.branch || user.degree_major || 'Computer Science & Engineering');
+      setCurrentYear(user.current_year || user.standard_class || '3rd Year');
       setInstitution(user.institution || 'Indian Institute of Technology');
-      setDegreeMajor(user.degree_major || 'Computer Science & Engineering');
-      setFocusTopics(user.focus_topics || []);
-      setFocusTopicsInput((user.focus_topics || []).join(', '));
+      setDegreeMajor(user.degree_major || user.branch || 'Computer Science & Engineering');
+      const interests = user.area_of_interest && user.area_of_interest.length > 0
+        ? user.area_of_interest
+        : user.focus_topics || ['Data Structures & Algorithms', 'System Design'];
+      setAreaOfInterestInput(interests.join(', '));
+      setUltimateAim(user.ultimate_aim || 'Crack Google SDE-1 / Top Product Companies');
+      setFocusTopicsInput((user.focus_topics || interests).join(', '));
     }
     loadCredits();
   }, [user, isOpen]);
@@ -75,7 +82,7 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
     setIsSaving(true);
     setSaveSuccess(false);
 
-    const topics = focusTopicsInput
+    const topics = areaOfInterestInput
       .split(',')
       .map(t => t.trim())
       .filter(t => t.length > 0);
@@ -85,9 +92,13 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
         name,
         phone,
         education_level: educationLevel,
-        standard_class: standardClass,
+        standard_class: currentYear,
+        branch,
+        current_year: currentYear,
         institution,
-        degree_major: degreeMajor,
+        degree_major: branch,
+        area_of_interest: topics,
+        ultimate_aim: ultimateAim,
         focus_topics: topics,
       }, user?.id);
 
@@ -233,6 +244,38 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                    <BookOpen className="w-3.5 h-3.5 text-slate-400" /> Branch of Study
+                  </label>
+                  <input
+                    type="text"
+                    value={branch}
+                    onChange={(e) => setBranch(e.target.value)}
+                    required
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
+                    placeholder="e.g. Computer Science & Engineering, IT, AI-ML"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
+                    <GraduationCap className="w-3.5 h-3.5 text-slate-400" /> Current Year of Study
+                  </label>
+                  <select
+                    value={currentYear}
+                    onChange={(e) => setCurrentYear(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
+                  >
+                    <option value="1st Year">1st Year (Fresher)</option>
+                    <option value="2nd Year">2nd Year (Sophomore)</option>
+                    <option value="3rd Year">3rd Year (Pre-Final)</option>
+                    <option value="4th Year">4th Year (Final Year)</option>
+                    <option value="Postgraduate / Masters">Postgraduate / Masters</option>
+                    <option value="Self Learner / Placement Prep">Self Learner / Placement Prep</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
                     <School className="w-3.5 h-3.5 text-slate-400" /> School / College / University
                   </label>
                   <input
@@ -246,31 +289,31 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
-                    <BookOpen className="w-3.5 h-3.5 text-slate-400" /> Degree & Major / Stream
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Ultimate Aim (Optional Goal)
                   </label>
                   <input
                     type="text"
-                    value={degreeMajor}
-                    onChange={(e) => setDegreeMajor(e.target.value)}
+                    value={ultimateAim}
+                    onChange={(e) => setUltimateAim(e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
-                    placeholder="e.g. Computer Science & Engineering / Pre-Med"
+                    placeholder="e.g. Crack Google SDE-1 / GATE Rank < 100 / Master System Design"
                   />
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-500" /> Specific Focus Topics (Comma separated for Niche Video Feed)
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-500" /> Area of Interest (Comma separated topics for AI video recommendations)
                 </label>
                 <input
                   type="text"
-                  value={focusTopicsInput}
-                  onChange={(e) => setFocusTopicsInput(e.target.value)}
+                  value={areaOfInterestInput}
+                  onChange={(e) => setAreaOfInterestInput(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
-                  placeholder="e.g. Data Structures, Operating Systems, System Design, Calculus"
+                  placeholder="e.g. Data Structures & Algorithms, System Design, Operating Systems, Machine Learning"
                 />
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                  Our curated recommendation engine selects distraction-free lecture playlists based on these focus areas.
+                  Our recommendation engine pairs top YouTube channels (e.g. take U forward, NeetCode, Gate Smashers) matching your branch, year, and aim.
                 </p>
               </div>
 

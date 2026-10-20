@@ -15,6 +15,9 @@ import { AutoPilotModal } from './components/AutoPilotModal';
 import { SettingsModal } from './components/SettingsModal';
 import { StudentProfileModal } from './components/StudentProfileModal';
 import { DistractionFreeNicheHub } from './components/DistractionFreeNicheHub';
+import { OverallProgressDashboard } from './components/OverallProgressDashboard';
+import { YouTubeStudyWorkspace } from './components/YouTubeStudyWorkspace';
+import { AdminDashboard } from './components/AdminDashboard';
 
 import { api, getApiBase, setBackendUrl } from './services/api';
 import { SessionWebSocketClient } from './services/websocket';
@@ -35,7 +38,10 @@ import {
 import { ModernStudioLayout } from './components/ModernStudioLayout';
 
 export function App() {
-  const [currentTab, setCurrentTab] = useState('live');
+  const [currentTab, setCurrentTab] = useState('progress');
+  const [selectedYouTubeVideoId, setSelectedYouTubeVideoId] = useState('FfXoiwnn6ey');
+  const [selectedYouTubeTitle, setSelectedYouTubeTitle] = useState('Complete Dynamic Programming Masterclass & Memoization');
+  const [selectedYouTubeChannel, setSelectedYouTubeChannel] = useState('take U forward (Striver)');
   const [sessions, setSessions] = useState<LearningSession[]>([]);
   const [activeSession, setActiveSession] = useState<LearningSession | null>(null);
 
@@ -577,6 +583,7 @@ export function App() {
           activeSession={activeSession}
           user={userProfile}
           onOpenProfile={() => setProfileModalOpen(true)}
+          onNavigateHome={() => setCurrentTab('progress')}
           onPause={handlePause}
           onResume={handleResume}
           onStop={handleStop}
@@ -589,10 +596,41 @@ export function App() {
         />
 
         {/* View Switcher */}
-        {currentTab === 'niche' ? (
+        {currentTab === 'progress' ? (
+          <OverallProgressDashboard
+            user={userProfile}
+            onOpenProfile={() => setProfileModalOpen(true)}
+            onOpenYouTubeWorkspace={(vid) => {
+              if (vid) setSelectedYouTubeVideoId(vid);
+              setCurrentTab('youtube_study');
+            }}
+            onStartLiveCapture={() => setCurrentTab('live')}
+            onOpenNicheFeed={() => setCurrentTab('niche')}
+          />
+        ) : currentTab === 'youtube_study' ? (
+          <YouTubeStudyWorkspace
+            initialVideoId={selectedYouTubeVideoId || 'FfXoiwnn6ey'}
+            initialTitle={selectedYouTubeTitle || 'Complete Dynamic Programming Masterclass & Memoization'}
+            initialChannel={selectedYouTubeChannel || 'take U forward (Striver)'}
+            user={userProfile}
+            onBackToDashboard={() => setCurrentTab('progress')}
+            onSwitchToLiveCapture={() => setCurrentTab('live')}
+          />
+        ) : currentTab === 'admin' ? (
+          <AdminDashboard
+            currentUser={userProfile}
+            onBackToApp={() => setCurrentTab('progress')}
+          />
+        ) : currentTab === 'niche' ? (
           <DistractionFreeNicheHub
             user={userProfile}
             onOpenProfile={() => setProfileModalOpen(true)}
+            onOpenYouTubeWorkspace={(vid, title, channel) => {
+              if (vid) setSelectedYouTubeVideoId(vid);
+              if (title) setSelectedYouTubeTitle(title);
+              if (channel) setSelectedYouTubeChannel(channel);
+              setCurrentTab('youtube_study');
+            }}
             onSelectVideoForStudy={async (videoUrl, title) => {
               try {
                 await api.consumeCredit(undefined, 'LECTURE_INGESTION');

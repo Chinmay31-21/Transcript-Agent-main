@@ -159,14 +159,23 @@ export interface UserProfile {
   name: string;
   phone?: string;
   avatar_url?: string;
-  education_level: string; // "Undergraduate", "High School", etc.
-  standard_class?: string; // "3rd Year", "Class 12"
-  institution?: string; // "IIT Bombay"
-  degree_major?: string; // "Computer Science & Engineering"
+  education_level: string;
+  standard_class?: string;
+  institution?: string;
+  degree_major?: string;
+  branch?: string;
+  current_year?: string;
+  area_of_interest?: string[];
+  ultimate_aim?: string;
   focus_topics: string[];
   credits_balance: number;
   total_credits_used: number;
   subscription_tier: 'FREE_TRIAL' | 'PRO_MONTHLY' | 'ANNUAL_PASS';
+  payment_status?: 'FREE_TRIAL_ACTIVE' | 'PENDING_APPROVAL' | 'PAID_APPROVED' | 'REJECTED';
+  payment_reference?: string;
+  is_approved_by_admin?: boolean;
+  credentials_sent?: boolean;
+  role?: 'STUDENT' | 'ADMIN';
   created_at?: number;
   updated_at?: number;
 }
@@ -186,19 +195,66 @@ export interface NicheTopicItem {
   id: string;
   title: string;
   topic: string;
+  channel_name?: string;
   target_stream: string;
   source_url: string;
+  video_id?: string;
   duration_minutes: number;
   difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
   thumbnail_url: string;
   description: string;
+  why_recommended?: string;
 }
 
 export interface NicheFeed {
   education_level: string;
   degree_major: string;
   standard_class: string;
+  branch?: string;
+  current_year?: string;
+  ultimate_aim?: string;
+  area_of_interest?: string[];
   focus_topics: string[];
   curated_topics: NicheTopicItem[];
 }
+
+export interface StudentProgressSummary {
+  user_id: string;
+  name: string;
+  branch: string;
+  current_year: string;
+  ultimate_aim: string;
+  total_study_hours: number;
+  total_sessions: number;
+  total_concepts_learned: number;
+  concepts_grasped: number;
+  concepts_struggling: number;
+  total_screenshots_captured: number;
+  total_transcripts_words: number;
+  practice_accuracy_pct: number;
+  study_streak_days: number;
+  credits_remaining: number;
+  subscription_tier: string;
+  top_mastered_topics: Array<{ topic: string; mastery_pct: number; concepts_count: number }>;
+  recent_activity: Array<{ session_id: string; title: string; platform: string; duration_min: number; timestamp: number }>;
+}
+
+export interface AdminStatsResponse {
+  total_students: number;
+  active_pro_subscribers: number;
+  pending_approvals: number;
+  total_revenue_inr: number;
+  total_lectures_analyzed: number;
+  total_ppts_generated: number;
+  users_list: UserProfile[];
+}
+
+export interface AdminUserActionResponse {
+  success: boolean;
+  user: UserProfile;
+  message: string;
+  email_dispatched: boolean;
+  dispatched_details?: Record<string, any>;
+}
+
 
